@@ -81,6 +81,11 @@ func main() {
 		log.Fatal("PORT environment variable is not set")
 	}
 
+	appVer := os.Getenv("APP_VERSION")
+	if appVer == "" {
+		log.Fatal("PORT environment variable is not set")
+	}
+
 	cfg := apiConfig{
 		db:               db,
 		jwtSecret:        jwtSecret,
@@ -125,6 +130,6 @@ func main() {
 		Handler: mux,
 	}
 
-	log.Printf("Serving on: http://localhost:%s/app/\n", port)
+	log.Printf("Version: %s | Serving on: http://localhost:%s/app/\n", appVer, port)
 	log.Fatal(srv.ListenAndServe())
 }
