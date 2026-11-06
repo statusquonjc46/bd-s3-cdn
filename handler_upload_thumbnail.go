@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -70,9 +72,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusUnauthorized, "video user id does not match user performing action", nil)
 		return
 	}
-
+	randBytes := make([]byte, 32)
+	rand.Read(randBytes)
+	randId := base64.RawURLEncoding.EncodeToString(randBytes)
 	fileExt := strings.Split(mediaType, "/")[1]
-	fileName := fmt.Sprintf("%v.%s", videoData.ID.String(), fileExt)
+	fileName := fmt.Sprintf("%v.%s", randId, fileExt)
 	filePath := filepath.Join(cfg.assetsRoot, fileName)
 	filePointer, err := os.Create(filePath)
 	if err != nil {
