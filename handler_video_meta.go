@@ -89,13 +89,35 @@ func (cfg *apiConfig) handlerVideoGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT", err)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
+		return
+	}
+
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "Couldn't get video", err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, video)
+	if video.UserID != userID {
+		respondWithError(w, http.StatusForbidden, "JWT not of Video Author", err)
+		return
+	}
+
+	videoData, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to get signed video", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, videoData)
 }
 
 func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Request) {
@@ -116,5 +138,15 @@ func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, videos)
+	signedVideos := []database.Video{}
+	for _, vid := range videos {
+		videoData, err := cfg.dbVideoToSignedVideo(vid)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "failed to get signed video", err)
+			return
+		}
+		signedVideos = append(signedVideos, videoData)
+	}
+
+	respondWithJSON(w, http.StatusOK, signedVideos)
 }

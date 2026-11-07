@@ -13,9 +13,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -145,6 +148,35 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	}
 }
 
+func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	pSigned := s3.NewPresignClient(s3Client)
+	pSignedObject, err := pSigned.PresignGetObject(context.Background(), &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)}, s3.WithPresignExpires(expireTime))
+	if err != nil {
+		return "", fmt.Errorf("failed to get presigned object")
+	}
+	return pSignedObject.URL, nil
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	if video.VideoURL == nil {
+		return video, nil
+	}
+
+	urlSplit := strings.Split(*video.VideoURL, ",")
+	if len(urlSplit) != 2 {
+		return video, fmt.Errorf("Url malformatted")
+	}
+	bucket := urlSplit[0]
+	key := urlSplit[1]
+	signedURL, err := generatePresignedURL(cfg.s3client, bucket, key, 5*time.Minute)
+	if err != nil {
+		return database.Video{}, fmt.Errorf("Failed to generate presigned url: %v", err)
+	}
+
+	video.VideoURL = &signedURL
+	return video, nil
+}
+
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
 	// 1GB upload limit
 	const uploadLimit = 1 << 30
@@ -155,7 +187,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	videoIDString := r.PathValue("videoID")
 	videoID, err := uuid.Parse(videoIDString)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid ID", err)
+		respondWithError(w, http.StatusBadRequest, "Ifnvalid ID", err)
 		return
 	}
 
@@ -274,11 +306,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, s3key)
+	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, s3key)
 	videoData.VideoURL = &videoURL
+
 	err = cfg.db.UpdateVideo(videoData)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update video in DB", err)
+		return
+	}
+
+	videoData, err = cfg.dbVideoToSignedVideo(videoData)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "failed to update video url to signed", err)
 		return
 	}
 
