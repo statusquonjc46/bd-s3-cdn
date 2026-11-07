@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -20,6 +22,7 @@ type apiConfig struct {
 	s3Bucket         string
 	s3Region         string
 	s3CfDistribution string
+	s3client         *s3.Client
 	port             string
 }
 
@@ -30,6 +33,7 @@ type thumbnail struct {
 
 func main() {
 	godotenv.Load(".env")
+	awsConfig, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(os.Getenv("S3_REGION")))
 
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
@@ -96,6 +100,7 @@ func main() {
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
+		s3client:         s3.NewFromConfig(awsConfig),
 	}
 
 	err = cfg.ensureAssetsDir()
